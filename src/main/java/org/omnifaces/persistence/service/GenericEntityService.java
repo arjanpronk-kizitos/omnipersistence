@@ -219,6 +219,7 @@ public class GenericEntityService {
 					if (type.isEnum()) {
 						try {
 							Enum enumValue;
+
 							boolean negated = searchValue.startsWith("!");
 
 							if (negated) {
@@ -227,19 +228,41 @@ public class GenericEntityService {
 							if(value instanceof Object[]) {
 								if (((Object[]) value).length == 1){
 									enumValue = (Enum) ((Object[]) value)[0];
+									searchParameters.put(searchKey, enumValue);
+									if (negated) {
+										exactPredicates.add(criteriaBuilder.notEqual(root.get(key), criteriaBuilder.parameter(type, searchKey)));
+									} else {
+										exactPredicates.add(criteriaBuilder.equal(root.get(key), criteriaBuilder.parameter(type, searchKey)));
+									}
 								} else {
-									enumValue = Enum.valueOf((Class<Enum>) type, searchValue.toUpperCase());
+
+									Object[] objectArray = (Object[]) value;
+									Enum[] enumValues = new Enum[objectArray.length];
+									List<Expression> expressionList = new ArrayList<>(objectArray.length);
+
+									for (int i=0;i<objectArray.length;i++) {
+										enumValues[i] = (Enum) objectArray[i];
+										String name = searchKey + enumValues[i];
+										expressionList.add(criteriaBuilder.parameter(enumValues[i].getClass(), name));
+										searchParameters.put(name, enumValues[i]);
+									}
+
+									exactPredicates.add(root.get(key).in(expressionList.toArray(new Expression[expressionList.size()])));
+									searchParameters.put(searchKey, null);
+
 								}
 							} else {
 								enumValue = Enum.valueOf((Class<Enum>) type, searchValue.toUpperCase());
+								searchParameters.put(searchKey, enumValue);
+								if (negated) {
+									exactPredicates.add(criteriaBuilder.notEqual(root.get(key), criteriaBuilder.parameter(type, searchKey)));
+								} else {
+									exactPredicates.add(criteriaBuilder.equal(root.get(key), criteriaBuilder.parameter(type, searchKey)));
+								}
 							}
-							searchParameters.put(searchKey, enumValue);
 
-							if (negated) {
-								exactPredicates.add(criteriaBuilder.notEqual(root.get(key), criteriaBuilder.parameter(type, searchKey)));
-							} else {
-								exactPredicates.add(criteriaBuilder.equal(root.get(key), criteriaBuilder.parameter(type, searchKey)));
-							}
+
+
 						}
 						catch (IllegalArgumentException ignore) {
 							return; // Likely custom search value referring non-existent enum value.
