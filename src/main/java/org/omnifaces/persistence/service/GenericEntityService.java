@@ -246,8 +246,9 @@ public class GenericEntityService {
 										expressionList.add(criteriaBuilder.parameter(enumValues[i].getClass(), name));
 										searchParameters.put(name, enumValues[i]);
 									}
-
-									exactPredicates.add(root.get(key).in(expressionList.toArray(new Expression[expressionList.size()])));
+									if(expressionList.size() != 0) {
+										exactPredicates.add(root.get(key).in(expressionList.toArray(new Expression[expressionList.size()])));
+									}
 									searchParameters.put(searchKey, null);
 
 								}
