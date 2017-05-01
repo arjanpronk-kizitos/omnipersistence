@@ -3,6 +3,7 @@ package org.omnifaces.persistence.service;
 import static java.util.Arrays.stream;
 import static java.util.Collections.EMPTY_MAP;
 import static java.util.Collections.singleton;
+import static java.util.function.Function.identity;
 import static java.util.regex.Pattern.quote;
 import static javax.persistence.criteria.JoinType.LEFT;
 import static org.omnifaces.utils.Lang.isEmpty;
@@ -18,6 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import javax.persistence.EntityManager;
@@ -225,53 +227,43 @@ public class GenericEntityService {
 							if (negated) {
 								searchValue = searchValue.substring(1);
 							}
-							if(value instanceof Object[]) {
-								if (((Object[]) value).length == 1){
+							if (value instanceof Object[]) {
+								if (((Object[]) value).length == 1) {
 									enumValue = (Enum) ((Object[]) value)[0];
 									searchParameters.put(searchKey, enumValue);
 									if (negated) {
 										exactPredicates.add(criteriaBuilder.notEqual(root.get(key), criteriaBuilder.parameter(type, searchKey)));
-									} else {
+									}
+									else {
 										exactPredicates.add(criteriaBuilder.equal(root.get(key), criteriaBuilder.parameter(type, searchKey)));
 									}
 								} else {
-
-									Object[] objectArray = (Object[]) value;
-									Enum[] enumValues = new Enum[objectArray.length];
-									List<Expression> expressionList = new ArrayList<>(objectArray.length);
-
-									for (int i=0;i<objectArray.length;i++) {
-										enumValues[i] = (Enum) objectArray[i];
-										String name = searchKey + enumValues[i];
-										expressionList.add(criteriaBuilder.parameter(enumValues[i].getClass(), name));
-										searchParameters.put(name, enumValues[i]);
-									}
-									if(expressionList.size() != 0) {
-										exactPredicates.add(root.get(key).in(expressionList.toArray(new Expression[expressionList.size()])));
-									}
-									searchParameters.put(searchKey, null);
-
+									createInExpression(criteriaBuilder, root, searchParameters, exactPredicates, key, (Object[]) value, searchKey);
 								}
-							} else {
+							}
+							else {
 								enumValue = Enum.valueOf((Class<Enum>) type, searchValue.toUpperCase());
 								searchParameters.put(searchKey, enumValue);
 								if (negated) {
 									exactPredicates.add(criteriaBuilder.notEqual(root.get(key), criteriaBuilder.parameter(type, searchKey)));
-								} else {
+								}
+								else {
 									exactPredicates.add(criteriaBuilder.equal(root.get(key), criteriaBuilder.parameter(type, searchKey)));
 								}
 							}
-
-
-
 						}
 						catch (IllegalArgumentException ignore) {
 							return; // Likely custom search value referring non-existent enum value.
 						}
 					}
 					else if (Boolean.class.isAssignableFrom(type)) {
-						exactPredicates.add(criteriaBuilder.equal(root.get(key), criteriaBuilder.parameter(type, searchKey)));
-						searchParameters.put(searchKey, Boolean.valueOf(searchValue));
+						if (value instanceof Object[]) {
+							createInExpression(criteriaBuilder, root, searchParameters, exactPredicates, key, (Object[]) value, searchKey, item -> Boolean.valueOf(item.toString()));
+						}
+						else {
+							exactPredicates.add(criteriaBuilder.equal(root.get(key), criteriaBuilder.parameter(type, searchKey)));
+							searchParameters.put(searchKey, Boolean.valueOf(searchValue));
+						}
 					}
 					else if (Long.class.isAssignableFrom(type)) {
 						if (isOneOf(searchValue, "true", "false")) {
@@ -317,8 +309,13 @@ public class GenericEntityService {
 						searchParameters.put(searchKey, null);
 					}
 					else if (!sortFilterPage.getFilterableFields().contains(key)) {
-						exactPredicates.add(criteriaBuilder.equal(root.get(key), criteriaBuilder.parameter(type, searchKey)));
-						searchParameters.put(searchKey, searchValue);
+						if (value instanceof Object[]) {
+							createInExpression(criteriaBuilder, root, searchParameters, exactPredicates, key, (Object[]) value, searchKey);
+						}
+						else {
+							exactPredicates.add(criteriaBuilder.equal(root.get(key), criteriaBuilder.parameter(type, searchKey)));
+							searchParameters.put(searchKey, searchValue);
+						}
 					}
 
 					if (!searchParameters.containsKey(searchKey)) {
@@ -446,6 +443,31 @@ public class GenericEntityService {
 				teardownHandler.accept(entityManager);
 			}
 		}
+	}
+
+	private void createInExpression(CriteriaBuilder criteriaBuilder, Root<?> root, Map<String, Object> searchParameters, List<Predicate> exactPredicates, String key, Object[] values, String searchKey) {
+		createInExpression(criteriaBuilder, root, searchParameters, exactPredicates, key, values, searchKey, identity());
+	}
+
+	private <T> void createInExpression(CriteriaBuilder criteriaBuilder, Root<?> root, Map<String, Object> searchParameters, List<Predicate> exactPredicates, String key, Object[] values, String searchKey, Function<T, Object> searchParameterConverter) {
+		List<T> items = new ArrayList<>();
+		List<Expression> expressions = new ArrayList<>();
+
+		for (Object value : values) {
+			T item = (T) value;
+			String name = searchKey + item.toString().replaceAll("[^\\w|\\d|_]+", "_");
+			Object searchValue = searchParameterConverter.apply(item);
+
+			items.add(item);
+			expressions.add(criteriaBuilder.parameter(searchValue.getClass(), name));
+			searchParameters.put(name, searchValue);
+		}
+
+		if (!expressions.isEmpty()) {
+			exactPredicates.add(root.get(key).in(expressions.toArray(new Expression[expressions.size()])));
+		}
+
+		searchParameters.put(searchKey, null);
 	}
 
 }
