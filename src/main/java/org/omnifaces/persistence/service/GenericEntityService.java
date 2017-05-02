@@ -12,9 +12,12 @@ import static org.omnifaces.utils.Lang.isOneOf;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.sql.SQLException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -287,6 +290,23 @@ public class GenericEntityService {
 						}
 						else {
 							searchParameters.remove(searchKey);
+						}
+					}
+					else if (Date.class.isAssignableFrom(type)) {
+						if(value instanceof Object[]) {
+							exactPredicates.add(criteriaBuilder.between(root.get(key), criteriaBuilder.parameter(Date.class, "min_" + searchKey), criteriaBuilder.parameter(Date.class, "max_" + searchKey)));
+							searchParameters.put("min_" + searchKey, ((Date[]) value)[0]);
+							searchParameters.put("max_" + searchKey, ((Date[]) value)[1]);
+							searchParameters.put(searchKey, null);
+						}
+						else {
+							try {
+								exactPredicates.add(criteriaBuilder.or(criteriaBuilder.greaterThan(root.get(key), criteriaBuilder.parameter(Date.class,searchKey)), criteriaBuilder.isNull(root.get(key))));
+								Date date = new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy").parse(searchValue);
+								searchParameters.put(searchKey, date);
+							} catch (ParseException e1) {
+								searchParameters.remove(searchKey);
+							}
 						}
 					}
 					else if (Collection.class.isAssignableFrom(type)) {
